@@ -1,0 +1,15 @@
+[submodule "c-algorithms"]
+	path = c-algorithms
+	url = ./c-algorithms
+[submodule "cbitset"]
+	path = cbitset
+	url = ./cbitset
+[submodule "qlibc"]
+	path = qlibc
+	url = ./qlibc
+[submodule "sds"]
+	path = sds
+	url = ./sds
+[submodule "vec"]
+	path = vec
+	url = ./vec
