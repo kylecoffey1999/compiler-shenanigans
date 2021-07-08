@@ -2,18 +2,36 @@ cmake_minimum_required(VERSION 3.21)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 20)
 
+project(c-algorithms)
+file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "c-algorithms/src/*.[ch]")
+add_library(c-algorithms ${SOURCES})
+target_include_directories(${PROJECT_NAME} PUBLIC c-algorithms/src)
+
+project(
+  sds
+  VERSION 2.0.0
+  LANGUAGES C)
+file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "sds/*.[ch]")
+add_library(sds ${SOURCES})
+target_include_directories(${PROJECT_NAME} PUBLIC sds)
+
+project(
+  vec
+  VERSION 0.2.1
+  LANGUAGES C)
+file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "vec/src/*.[ch]")
+add_library(vec ${SOURCES})
+target_include_directories(${PROJECT_NAME} PUBLIC vec/src)
+
+add_subdirectory(cbitset)
+
 project(
   regexc
   VERSION 0.1.0
   LANGUAGES C)
 file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "c/*.[ch]")
 add_executable(${PROJECT_NAME} ${SOURCES})
-
-add_subdirectory(c-algorithms)
-target_link_libraries(${PROJECT_NAME} PRIVATE "C-Algorithms")
-target_include_directories(${PROJECT_NAME} PRIVATE c-algorithms/src)
-
-add_subdirectory(sds)
+target_link_libraries(${PROJECT_NAME} PRIVATE c-algorithms)
 target_link_libraries(${PROJECT_NAME} PRIVATE sds)
 
 project(
@@ -23,10 +41,7 @@ project(
 file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "plainc/*.[ch]")
 add_executable(${PROJECT_NAME} ${SOURCES})
 
-add_subdirectory(cbitset)
-add_subdirectory(vec)
 target_link_libraries(${PROJECT_NAME} cbitset vec)
-target_include_directories(${PROJECT_NAME} PRIVATE vec/src)
 
 project(
   regex-cpp
