@@ -1,15 +1,15 @@
 [submodule "c-algorithms"]
 	path = c-algorithms
-	url = ./c-algorithms
+	url = https://github.com/fragglet/c-algorithms
 [submodule "cbitset"]
 	path = cbitset
-	url = ./cbitset
+	url = https://github.com/lemire/cbitset
 [submodule "qlibc"]
 	path = qlibc
-	url = ./qlibc
+	url = https://github.com/wolkykim/qlibc
 [submodule "sds"]
 	path = sds
-	url = ./sds
+	url = https://github.com/antirez/sds
 [submodule "vec"]
 	path = vec
-	url = ./vec
+	url = https://github.com/rxi/vec
