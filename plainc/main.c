@@ -804,13 +804,13 @@ int main(int argc, char *argv[]) {
   nfa_t nfa2 = thompson("^[ \\t]*#[0-9]+.*$");
   // nfa_print(&nfa2);
 
-  dfa_t dfa = nfa_to_dfa(&nfa2);
+  dfa_t dfa = nfa_to_dfa(&nfa);
   dfa_to_dot(&dfa);
   dfa_t min = minimize_dfa(&dfa);
   dfa_to_dot(&min);
 
-  emit_yy_next("UNMIN_TABLE");
-  printf("static const int UNMIN_TABLE[][] = ");
+  emit_yy_next("MIN_TABLE");
+  printf("static const int MIN_TABLE[][] = ");
   emit_dfa_state_table(&min);
 
   nfa_free(&nfa);
