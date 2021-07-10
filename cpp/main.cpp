@@ -2,6 +2,8 @@
 #include <boost/dynamic_bitset.hpp>
 #include <boost/variant2/variant.hpp>
 #include <fmt/format.h>
+#include <initializer_list>
+#include <iomanip>
 #include <iostream>
 #include <memory>
 #include <stack>
@@ -9,6 +11,16 @@
 #include <vector>
 
 #define DEBUG
+
+template <typename T>
+static constexpr bool in(T value, std::initializer_list<T> values) {
+  for (const auto &v : values) {
+    if (value != v) {
+      return false;
+    }
+  }
+  return true;
+}
 
 class BitSet {
   using _internal_type = boost::dynamic_bitset<>;
@@ -42,10 +54,26 @@ public:
     _set = ~_set;
     _isComplement = !_isComplement;
   }
-  bool get(std::size_t bit) { return _set[bit]; }
+  bool get(std::size_t bit) const { return _set[bit]; }
   const_iterator begin() { return const_iterator{*this}; }
   const_iterator end() { return const_iterator{*this, _set.size()}; }
+  void clear() { _set.clear(); }
 };
+
+static std::ostream &printccl(std::ostream &os, const BitSet &set) {
+  os << "[";
+  for (int i = 0; i <= 0x7F; ++i) {
+    if (set.get(i)) {
+      if (i < ' ') {
+        os << fmt::format("^{}", static_cast<char>(i + '@'));
+      } else {
+        os << fmt::format("{}", static_cast<char>(i));
+      }
+    }
+  }
+  os << "]";
+  return os;
+}
 
 static constexpr char edgeEmpty = -3;
 static constexpr char edgeCharacterClass = -2;
@@ -59,7 +87,7 @@ static constexpr int anchorBoth = anchorLineStart | anchorLineEnd;
 struct NfaNode {
   std::array<std::size_t, 2> next;
   char edge;
-  boost::dynamic_bitset<> bitset;
+  BitSet bitset;
   int anchor;
   int index;
   NfaNode(int index)
@@ -71,18 +99,53 @@ struct Nfa {
   std::size_t startState;
 };
 
-static boost::variant2::variant<Nfa, std::string>
-thompson(std::string_view input);
-static std::ostream &operator<<(std::ostream &os, const Nfa &nfa);
+static std::ostream &operator<<(std::ostream &os, const Nfa &nfa) {
+  auto flags = os.flags();
+  os << fmt::format("{:-30}\n", " NFA ");
+  for (int i = 0; i < nfa.nodes.size(); ++i) {
+    if (nfa.nodes[i].index == -1) {
+      continue;
+    }
+    os << "NFA state " << std::setw(2) << i << ": ";
+    if (nfa.nodes[i].next[0] == edgeEmpty) {
+      os << "(TERMINAL)";
+    } else {
+      os << "--> " << std::setw(2) << nfa.nodes[i].next[0] << " ";
+      os << "(" << std::setw(2) << nfa.nodes[i].next[1] << " on ";
+
+      switch (nfa.nodes[i].edge) {
+      case edgeCharacterClass:
+        printccl(os, nfa.nodes[i].bitset);
+        break;
+      case edgeEpsilon:
+        os << "EPSILON ";
+        break;
+      default:
+        if (nfa.nodes[i].edge < ' ') {
+          os << "^" << nfa.nodes[i].edge;
+        } else {
+          os << nfa.nodes[i].edge;
+        }
+        break;
+      }
+    }
+    if (i == nfa.startState) {
+      os << " (START STATE)";
+    }
+    os << '\n';
+  }
+  os << fmt::format("{:-30}\n", "");
+  return os;
+}
 
 struct ParserState {
 #ifdef DEBUG
-  std::size_t indentLevel;
+  std::size_t indentLevel = 0;
   void enter(std::string_view functionName) {
-    fmt::print("{:{}}enter {}\n", indentLevel++, "", functionName);
+    fmt::print("{: >{}}enter {}\n", "", indentLevel++, functionName);
   }
   void leave(std::string_view functionName) {
-    fmt::print("{:{}}leave {}\n", --indentLevel, "", functionName);
+    fmt::print("{: >{}}leave {}\n", "", --indentLevel, functionName);
   }
 #else
   void enter(std::string_view functionName) {}
@@ -90,8 +153,8 @@ struct ParserState {
 #endif
 
 private:
-  static std::vector<NfaNode> nfaStates;
-  static std::stack<std::size_t> discarded_nfa_states;
+  std::vector<NfaNode> nfaStates;
+  std::stack<std::size_t> discarded_nfa_states;
 
   std::size_t allocateNfaNode() {
     if (!discarded_nfa_states.empty()) {
@@ -291,14 +354,119 @@ private:
   }
 
   void catExpr(std::size_t *, std::size_t *);
-  static void dodash(boost::dynamic_bitset<> *);
+  void dodash(BitSet *);
   void expr(std::size_t *, std::size_t *);
   void factor(std::size_t *, std::size_t *);
   bool firstInCat(RegexToken);
   Nfa machine();
   std::size_t rule();
   void term(std::size_t *, std::size_t *);
+
+public:
+  Nfa thompson(std::string_view input) {
+    nfaStates.clear();
+    std::string t{input};
+    this->input = t.c_str();
+    currentToken = tokEos;
+    advance();
+    return machine();
+  }
 };
+
+void ParserState::catExpr(std::size_t *sp, std::size_t *ep) {
+  std::size_t e2Start;
+  std::size_t e2End;
+  enter("catExpr");
+  if (firstInCat(currentToken)) {
+    factor(sp, ep);
+  }
+  while (firstInCat(currentToken)) {
+    factor(&e2Start, &e2End);
+    nfaStates[*ep] = nfaStates[e2Start];
+    discardNfaNode(e2Start);
+    *ep = e2End;
+  }
+  leave("catExpr");
+}
+
+void ParserState::dodash(BitSet *bitset) {
+  char first;
+  for (; !in(currentToken, {tokEos, tokRightBracket}); advance()) {
+    if (currentToken != tokDash) {
+      first = lexeme;
+      bitset->set(lexeme);
+    } else {
+      advance();
+      for (; first <= lexeme; ++first) {
+        bitset->set(first);
+      }
+    }
+  }
+}
+
+void ParserState::expr(std::size_t *sp, std::size_t *ep) {
+  std::size_t e2Start;
+  std::size_t e2End;
+  enter("expr");
+  catExpr(sp, ep);
+  while (currentToken == tokPipe) {
+    advance();
+    catExpr(&e2Start, &e2End);
+    std::size_t p = allocateNfaNode();
+    nfaStates[p].next[1] = e2Start;
+    nfaStates[p].next[0] = *sp;
+    *sp = p;
+    p = allocateNfaNode();
+    nfaStates[*ep].next[0] = p;
+    nfaStates[e2End].next[0] = p;
+    *ep = p;
+  }
+  leave("expr");
+}
+
+void ParserState::factor(std::size_t *sp, std::size_t *ep) {
+  std::size_t start;
+  std::size_t end;
+  enter("factor");
+  term(sp, ep);
+  if (in(currentToken, {tokStar, tokPlus, tokQuestionMark})) {
+    start = allocateNfaNode();
+    end = allocateNfaNode();
+    nfaStates[start].next[0] = *sp;
+    nfaStates[*ep].next[0] = end;
+    if (in(currentToken, {tokStar, tokQuestionMark})) {
+      nfaStates[start].next[1] = end;
+    }
+    if (in(currentToken, {tokStar, tokPlus})) {
+      nfaStates[*ep].next[1] = *sp;
+    }
+    *sp = start;
+    *ep = end;
+    advance();
+  }
+  leave("factor");
+}
+
+bool ParserState::firstInCat(RegexToken tok) {
+  switch (tok) {
+  case tokRightParen:
+  case tokDollar:
+  case tokPipe:
+  case tokEos:
+    return false;
+  case tokStar:
+  case tokPlus:
+  case tokQuestionMark:
+    throw std::runtime_error{"unexpected closure operator, they must only "
+                             "appear after expressions."};
+  case tokRightBracket:
+    throw std::runtime_error{"unexpected ']' outside of character class."};
+  case tokCarat:
+    throw std::runtime_error{"unexpected '^' not at beginning of string."};
+  default:
+    return true;
+  }
+}
 
 Nfa ParserState::machine() {
   enter("machine");
@@ -334,10 +502,67 @@ std::size_t ParserState::rule() {
     advance();
     nfaStates[end].next[0] = allocateNfaNode();
     nfaStates[end].edge = edgeCharacterClass;
-    nfaStates[end].bitset.resize(std::max('\r', '\n'));
     nfaStates[end].bitset.set('\n');
     nfaStates[end].bitset.set('\r');
+    end = nfaStates[end].next[0];
+    anchor |= anchorLineEnd;
   }
+
+  nfaStates[end].anchor = anchor;
+  advance();
+  leave("rule");
+  return start;
 }
 
-int main() { return 0; }
+void ParserState::term(std::size_t *sp, std::size_t *ep) {
+  enter("term");
+  if (currentToken == tokLeftParen) {
+    advance();
+    expr(sp, ep);
+    if (currentToken == tokRightParen) {
+      advance();
+    } else {
+      throw std::runtime_error{"Missing close parenthesis."};
+    }
+  } else {
+    std::size_t start = allocateNfaNode();
+    *sp = start;
+    *ep = nfaStates[start].next[0] = allocateNfaNode();
+
+    if (!in(currentToken, {tokDot, tokLeftBracket})) {
+      nfaStates[start].edge = lexeme;
+      advance();
+    } else {
+      nfaStates[start].edge = edgeCharacterClass;
+      if (currentToken == tokDot) {
+        nfaStates[start].bitset.set('\n');
+        nfaStates[start].bitset.set('\r');
+        nfaStates[start].bitset.complement();
+      } else {
+        advance();
+        if (currentToken == tokCarat) {
+          advance();
+          nfaStates[start].bitset.set('\n');
+          nfaStates[start].bitset.set('\r');
+          nfaStates[start].bitset.complement();
+        }
+        if (currentToken != tokRightBracket) {
+          dodash(&nfaStates[start].bitset);
+        } else {
+          for (char c = '\0'; c <= ' '; ++c) {
+            nfaStates[start].bitset.set(c);
+          }
+        }
+      }
+      advance();
+    }
+  }
+  leave("term");
+}
+
+int main() {
+  ParserState state;
+  auto nfa = state.thompson("^[ \\t]*//[ \\t]*TRACE[ \\t]*#[0-9]+[ \\t]*$");
+  std::cout << nfa << "\n";
+  return 0;
+}

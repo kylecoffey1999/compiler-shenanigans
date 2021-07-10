@@ -8,14 +8,25 @@ project(
   LANGUAGES C)
 file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "c-algorithms/src/*.[ch]")
 add_library(c-algorithms ${SOURCES})
-target_include_directories(${PROJECT_NAME} PUBLIC "c-algorithms/src")
+target_include_directories(${PROJECT_NAME} PUBLIC c-algorithms/src)
 
 project(
   sds
   VERSION 2.0.0
   LANGUAGES C)
-add_library(sds sds/sds.c)
-target_include_directories(${PROJECT_NAME} PUBLIC "sds")
+file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "sds/*.[ch]")
+add_library(sds ${SOURCES})
+target_include_directories(${PROJECT_NAME} PUBLIC sds)
+
+project(
+  vec
+  VERSION 0.2.1
+  LANGUAGES C)
+file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "vec/src/*.[ch]")
+add_library(vec ${SOURCES})
+target_include_directories(${PROJECT_NAME} PUBLIC vec/src)
+
+add_subdirectory(cbitset)
 
 project(
   regexc
@@ -23,16 +34,8 @@ project(
   LANGUAGES C)
 file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "c/*.[ch]")
 add_executable(${PROJECT_NAME} ${SOURCES})
-
 target_link_libraries(${PROJECT_NAME} PRIVATE c-algorithms)
 target_link_libraries(${PROJECT_NAME} PRIVATE sds)
-
-project(
-  vec
-  VERSION 0.2.1
-  LANGUAGES C)
-add_library(vec vec/src/vec.c)
-target_include_directories(${PROJECT_NAME} PUBLIC vec/src)
 
 project(
   regex-plainc
@@ -41,7 +44,6 @@ project(
 file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "plainc/*.[ch]")
 add_executable(${PROJECT_NAME} ${SOURCES})
 
-add_subdirectory(cbitset)
 target_link_libraries(${PROJECT_NAME} cbitset vec)
 
 project(
