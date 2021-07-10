@@ -781,12 +781,6 @@ static void emit_dfa_state_table(const dfa_t *dfa) {
 #define DECODING_ROUTINE_STORAGE_CLASS "YYPRIVATE"
 #define INDENT "          "
 
-static void pairs(const dfa_t *dfa, const char *name, int threshold,
-                  bool numbers) {
-  printf("TODO\n");
-  // https://stackoverflow.com/a/29960371
-}
-
 static void dfa_free(dfa_t *dfa) {
   for (int i = 0; i < dfa->length; ++i) {
     for (int j = 0; j < dfa->data[i]->chars.length; ++j) {
@@ -800,24 +794,226 @@ static void dfa_free(dfa_t *dfa) {
   vec_deinit(dfa);
 }
 
+typedef vec_t(vec_int_t) dtran_t;
+
+dtran_t make_dtran(const dfa_t *dfa) {
+  dtran_t result;
+  vec_init(&result);
+  for (int i = 0; i < dfa->length; ++i) {
+    vec_int_t dtran_row;
+    vec_init(&dtran_row);
+    for (int c = 0; c < 0x80; ++c) {
+      vec_push(&dtran_row, -1);
+    }
+    for (int j = 0; j < dfa->data[i]->chars.length; ++j) {
+      for (int c = 0; c < 0x80; ++c) {
+        if (bitset_get(dfa->data[i]->chars.data[j], c)) {
+          dtran_row.data[c] = dfa->data[i]->next.data[j]->index;
+        }
+      }
+    }
+    vec_push(&result, dtran_row);
+  }
+  return result;
+}
+
+static void show_dtran(const dtran_t *dtran) {
+  printf("{\n");
+  for (int i = 0; i < dtran->length; ++i) {
+    printf("  [%d] = { ", i);
+    for (int j = 0; j < dtran->data[i].length; ++j) {
+      printf("%d, ", dtran->data[i].data[j]);
+    }
+    printf("},\n");
+  }
+  printf("};\n");
+}
+
+static const char *bin_to_ascii(int c, bool use_hex) {
+  static char buf[8];
+  c &= 0xFF;
+  if (' ' <= c && c < 0x7F && c != '\'' && c != '\\') {
+    buf[0] = c;
+    buf[1] = '\0';
+  } else {
+    buf[0] = '\\';
+    buf[2] = '\0';
+    switch (c) {
+    case '\\':
+      buf[1] = '\\';
+      break;
+    case '\'':
+      buf[1] = '\'';
+      break;
+    case '\b':
+      buf[1] = 'b';
+      break;
+    case '\f':
+      buf[1] = 'f';
+      break;
+    case '\t':
+      buf[1] = 't';
+      break;
+    case '\r':
+      buf[1] = 'r';
+      break;
+    case '\n':
+      buf[1] = 'n';
+      break;
+    default:
+      sprintf(&buf[1], use_hex ? "x%03x" : "%03o", c);
+      break;
+    }
+  }
+  return buf;
+}
+
+static void printv(FILE *fp, const char **argv) {
+  while (*argv) {
+    fprintf(fp, "%s\n", *argv++);
+  }
+}
+
+static void comment(FILE *fp, const char **argv) {
+  fprintf(fp, "\n/*---------------------------------------\n");
+  while (*argv) {
+    fprintf(fp, " * %s\n", *argv++);
+  }
+  fprintf(fp, " */\n\n");
+}
+
+static int pairs(FILE *fp, const dtran_t *dtran, const char *name,
+                 int threshold, bool numbers) {
+  // https://stackoverflow.com/a/29960371
+
+  int num_cells = 0;
+  for (int i = 0; i < dtran->length; ++i) {
+    int ntransitions = 0;
+    for (int *p = dtran->data[i].data, j = dtran->data[i].length; --j >= 0;
+         ++p) {
+      if (*p != -1) {
+        ++ntransitions;
+      }
+    }
+    if (ntransitions > 0) {
+      fprintf(fp, "%s %s %s%-d[] = { ", STORAGE_CLASS, TYPE, name, i);
+      ++num_cells;
+      if (ntransitions > threshold) {
+        fprintf(fp, "0,\n" INDENT);
+      } else {
+        fprintf(fp, "%5d, ", ntransitions);
+        if (threshold > 5) {
+          fprintf(fp, "\n" INDENT);
+        }
+      }
+
+      int nprinted = dtran->data[i].length;
+      int ncommas = ntransitions;
+      for (int *p = dtran->data[i].data, j = 0; j < dtran->data[i].length;
+           ++j, ++p) {
+        if (ntransitions > threshold) {
+          ++num_cells;
+          --nprinted;
+          fprintf(fp, "%5d", *p);
+          if (j < dtran->data[i].length - 1) {
+            fprintf(fp, ", ");
+          }
+        } else if (*p != -1) {
+          num_cells += 2;
+          if (numbers) {
+            fprintf(fp, "%d,%d", j, *p);
+          } else {
+            fprintf(fp, "'%s',%d", bin_to_ascii(j, 0), *p);
+          }
+          nprinted -= 2;
+          if (--ncommas > 0) {
+            fprintf(fp, ", ");
+          }
+        }
+        if (nprinted <= 0) {
+          fprintf(fp, "\n" INDENT);
+          nprinted = dtran->data[i].length;
+        }
+      }
+      fprintf(fp, "};\n");
+    }
+  }
+  fprintf(fp, "\n%s %s *%s[%d] =\n{\n" INDENT, STORAGE_CLASS, TYPE, name,
+          dtran->length);
+  int nprinted = 10;
+  for (int i = 0; i < dtran->length - 1; ++i) {
+    int ntransitions = 0;
+    for (int *p = dtran->data[i].data, j = dtran->data[i].length; --j >= 0;
+         ++p) {
+      if (*p != -1) {
+        ++ntransitions;
+      }
+    }
+    fprintf(fp, ntransitions ? "%s%-d, " : "NULL, ", name, i);
+    if (--nprinted <= 0) {
+      fprintf(fp, "\n" INDENT);
+      nprinted = 10;
+    }
+  }
+  fprintf(fp, "%s%-d\n};\n\n", name, dtran->length - 1);
+  return num_cells;
+}
+
+static void pnext(FILE *fp, const char *name) {
+  static const char *toptext[] = {
+      "Given the current state and the current input character, return ",
+      "the next state.",
+      NULL,
+  };
+  static const char *boptext[] = {
+      "  int i;", "  if (p)",
+      "  {",      "    if ((i = *p++) == 0)",
+      "    {",    "      return p[c];",
+      "    }",    "    for (; --i >= 0; p += 2)",
+      "    {",    "      if (c == p[0])",
+      "      {",  "        return p[1];",
+      "      }",  "    }",
+      "  }",      "  return YYF;",
+      "}",        NULL,
+  };
+  fprintf(
+      fp,
+      "\n/*----------------------------------------------------------------*/"
+      "\n");
+  fprintf(fp, "%s %s yy_next(int cur_state, unsigned int c)\n",
+          DECODING_ROUTINE_STORAGE_CLASS, TYPE);
+  fprintf(fp, "{\n");
+  comment(fp, toptext);
+  fprintf(fp, "    %s *p = %s[cur_state];\n", TYPE, name);
+  printv(fp, boptext);
+}
+
 int main(int argc, char *argv[]) {
   nfa_t nfa = thompson("^[ \\t]*//[ \\t]*TRACE[ \\t]*#[0-9]+[ \\t]*$");
   // nfa_print(&nfa);
   nfa_t nfa2 = thompson("^[ \\t]*#[0-9]+.*$");
-  nfa_print(&nfa2);
+  // nfa_print(&nfa2);
 
   dfa_t dfa = nfa_to_dfa(&nfa);
-  dfa_to_dot(&dfa);
+  // dfa_to_dot(&dfa);
   dfa_t min = minimize_dfa(&dfa);
-  dfa_to_dot(&min);
+  // dfa_to_dot(&min);
 
+  emit_yy_next("UNMIN_TABLE");
+  printf("static const int UNMIN_TABLE[][] = ");
+  emit_dfa_state_table(&dfa);
   emit_yy_next("MIN_TABLE");
   printf("static const int MIN_TABLE[][] = ");
   emit_dfa_state_table(&min);
 
+  dtran_t dtran = make_dtran(&min);
+  show_dtran(&dtran);
+
+  pairs(stdout, &dtran, "test", 5, true);
+
   dfa_free(&min);
   dfa_free(&dfa);
-  nfa_free(&nfa);
-  nfa_free(&nfa2);
+  // nfa_free(&nfa);
+  // nfa_free(&nfa2);
   return 0;
 }
