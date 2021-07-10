@@ -85,6 +85,7 @@ static nfa_node_t *alloc_nfa(nfa_parser_state_t *state) {
 static void discard_nfa(nfa_parser_state_t *state, nfa_node_t *node) {
   int index = node->index;
   vec_push(&state->discard_stack, node->index);
+  bitset_free(node->bitset);
   free(node);
   state->nfa.data[index] = NULL;
 }
@@ -448,6 +449,7 @@ static nfa_t thompson(const char *input) {
 void nfa_free(nfa_t *nfa) {
   for (int i = 0; i < nfa->nfa.length; ++i) {
     if (nfa->nfa.data[i]) {
+      bitset_free(nfa->nfa.data[i]->bitset);
       free(nfa->nfa.data[i]);
     }
   }
@@ -490,6 +492,7 @@ static dfa_node_t *epsilon_closure(nfa_t *nfa, bitset_t *input) {
       }
     }
   }
+  vec_deinit(&stack);
   dfa_node_t *dfa_node = malloc(sizeof(dfa_node_t));
   dfa_node->bitset = input;
   vec_init(&dfa_node->next);
@@ -569,10 +572,16 @@ static dfa_t nfa_to_dfa(nfa_t *nfa) {
           vec_push(&dfa, dj);
           vec_push(&work, dj);
         } else {
+          if (dj->bitset) {
+            bitset_free(dj->bitset);
+          }
           free(dj);
         }
       } else {
         // final state
+        if (dj->bitset) {
+          bitset_free(dj->bitset);
+        }
         free(dj);
       }
     }
@@ -709,11 +718,16 @@ static dfa_t minimize_dfa(dfa_t *dfa) {
     }
     vec_push(&new_dfa, node);
   }
+  for (int i = 0; i < partitions.length; ++i) {
+    vec_deinit(partitions.data[i]);
+  }
+  vec_deinit(&partitions);
   for (int i = 0; i < new_dfa.length; ++i) {
     for (int j = 0; j < pointers.data[i].length; ++j) {
       vec_push(&new_dfa.data[i]->next, new_dfa.data[pointers.data[i].data[j]]);
     }
   }
+  vec_deinit(&pointers);
   return new_dfa;
 }
 
@@ -773,11 +787,24 @@ static void pairs(const dfa_t *dfa, const char *name, int threshold,
   // https://stackoverflow.com/a/29960371
 }
 
+static void dfa_free(dfa_t *dfa) {
+  for (int i = 0; i < dfa->length; ++i) {
+    for (int j = 0; j < dfa->data[i]->chars.length; ++j) {
+      bitset_free(dfa->data[i]->chars.data[j]);
+    }
+    bitset_free(dfa->data[i]->bitset);
+    vec_deinit(&dfa->data[i]->chars);
+    vec_deinit(&dfa->data[i]->next);
+    free(dfa->data[i]);
+  }
+  vec_deinit(dfa);
+}
+
 int main(int argc, char *argv[]) {
   nfa_t nfa = thompson("^[ \\t]*//[ \\t]*TRACE[ \\t]*#[0-9]+[ \\t]*$");
   // nfa_print(&nfa);
   nfa_t nfa2 = thompson("^[ \\t]*#[0-9]+.*$");
-  // nfa_print(&nfa2);
+  nfa_print(&nfa2);
 
   dfa_t dfa = nfa_to_dfa(&nfa);
   dfa_to_dot(&dfa);
@@ -788,6 +815,8 @@ int main(int argc, char *argv[]) {
   printf("static const int MIN_TABLE[][] = ");
   emit_dfa_state_table(&min);
 
+  dfa_free(&min);
+  dfa_free(&dfa);
   nfa_free(&nfa);
   nfa_free(&nfa2);
   return 0;
