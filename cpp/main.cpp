@@ -3,6 +3,7 @@
 #include <boost/variant2/variant.hpp>
 #include <fmt/format.h>
 #include <initializer_list>
+#include <iomanip>
 #include <iostream>
 #include <memory>
 #include <stack>
@@ -53,11 +54,26 @@ public:
     _set = ~_set;
     _isComplement = !_isComplement;
   }
-  bool get(std::size_t bit) { return _set[bit]; }
+  bool get(std::size_t bit) const { return _set[bit]; }
   const_iterator begin() { return const_iterator{*this}; }
   const_iterator end() { return const_iterator{*this, _set.size()}; }
   void clear() { _set.clear(); }
 };
+
+static std::ostream &printccl(std::ostream &os, const BitSet &set) {
+  os << "[";
+  for (int i = 0; i <= 0x7F; ++i) {
+    if (set.get(i)) {
+      if (i < ' ') {
+        os << fmt::format("^{}", static_cast<char>(i + '@'));
+      } else {
+        os << fmt::format("{}", static_cast<char>(i));
+      }
+    }
+  }
+  os << "]";
+  return os;
+}
 
 static constexpr char edgeEmpty = -3;
 static constexpr char edgeCharacterClass = -2;
@@ -83,18 +99,53 @@ struct Nfa {
   std::size_t startState;
 };
 
-static boost::variant2::variant<Nfa, std::string>
-thompson(std::string_view input);
-static std::ostream &operator<<(std::ostream &os, const Nfa &nfa);
+static std::ostream &operator<<(std::ostream &os, const Nfa &nfa) {
+  auto flags = os.flags();
+  os << fmt::format("{:-30}\n", " NFA ");
+  for (int i = 0; i < nfa.nodes.size(); ++i) {
+    if (nfa.nodes[i].index == -1) {
+      continue;
+    }
+    os << "NFA state " << std::setw(2) << i << ": ";
+    if (nfa.nodes[i].next[0] == edgeEmpty) {
+      os << "(TERMINAL)";
+    } else {
+      os << "--> " << std::setw(2) << nfa.nodes[i].next[0] << " ";
+      os << "(" << std::setw(2) << nfa.nodes[i].next[1] << " on ";
+
+      switch (nfa.nodes[i].edge) {
+      case edgeCharacterClass:
+        printccl(os, nfa.nodes[i].bitset);
+        break;
+      case edgeEpsilon:
+        os << "EPSILON ";
+        break;
+      default:
+        if (nfa.nodes[i].edge < ' ') {
+          os << "^" << nfa.nodes[i].edge;
+        } else {
+          os << nfa.nodes[i].edge;
+        }
+        break;
+      }
+    }
+    if (i == nfa.startState) {
+      os << " (START STATE)";
+    }
+    os << '\n';
+  }
+  os << fmt::format("{:-30}\n", "");
+  return os;
+}
 
 struct ParserState {
 #ifdef DEBUG
-  std::size_t indentLevel;
+  std::size_t indentLevel = 0;
   void enter(std::string_view functionName) {
-    fmt::print("{:{}}enter {}\n", indentLevel++, "", functionName);
+    fmt::print("{: >{}}enter {}\n", "", indentLevel++, functionName);
   }
   void leave(std::string_view functionName) {
-    fmt::print("{:{}}leave {}\n", --indentLevel, "", functionName);
+    fmt::print("{: >{}}leave {}\n", "", --indentLevel, functionName);
   }
 #else
   void enter(std::string_view functionName) {}
@@ -310,6 +361,16 @@ private:
   Nfa machine();
   std::size_t rule();
   void term(std::size_t *, std::size_t *);
+
+public:
+  Nfa thompson(std::string_view input) {
+    nfaStates.clear();
+    std::string t{input};
+    this->input = t.c_str();
+    currentToken = tokEos;
+    advance();
+    return machine();
+  }
 };
 
 void ParserState::catExpr(std::size_t *sp, std::size_t *ep) {
@@ -499,4 +560,9 @@ void ParserState::term(std::size_t *sp, std::size_t *ep) {
   leave("term");
 }
 
-int main() { return 0; }
+int main() {
+  ParserState state;
+  auto nfa = state.thompson("^[ \\t]*//[ \\t]*TRACE[ \\t]*#[0-9]+[ \\t]*$");
+  std::cout << nfa << "\n";
+  return 0;
+}
