@@ -625,6 +625,20 @@ static dfa_node_t *do_goto(dfa_node_t *node, char c) {
   return NULL;
 }
 
+static bool dfa_nodes_equivalent(dfa_node_t *n1, dfa_node_t *n2) {
+  for (char c = 0; c < 0x7F; c++) {
+    dfa_node_t *g1 = do_goto(n1, c);
+    dfa_node_t *g2 = do_goto(n2, c);
+    if (!g1 ^ !g2) {
+      return false;
+    }
+    if (g1 && g1->partition != g2->partition) {
+      return false;
+    }
+  }
+  return true;
+}
+
 static dfa_t minimize_dfa(dfa_t *dfa) {
   // accepting, nonaccepting
   // for each partition:
@@ -633,123 +647,74 @@ static dfa_t minimize_dfa(dfa_t *dfa) {
   //   to a new partition
   vec_partition_t partitions;
   vec_init(&partitions);
-  partition_t *accepting = malloc(sizeof(partition_t));
-  vec_init(accepting);
-  partition_t *nonaccepting = malloc(sizeof(partition_t));
-  vec_init(nonaccepting);
-  for (int i = 0; i < dfa->length; ++i) {
+  partition_t *p0 = malloc(sizeof(partition_t));
+  vec_init(p0);
+  partition_t *p1 = malloc(sizeof(partition_t));
+  vec_init(p1);
+  for (int i = 0; i < dfa->length; i++) {
     if (dfa->data[i]->next.length == 0) {
       dfa->data[i]->partition = 0;
-      vec_push(accepting, dfa->data[i]);
+      vec_push(p0, dfa->data[i]);
     } else {
       dfa->data[i]->partition = 1;
-      vec_push(nonaccepting, dfa->data[i]);
+      vec_push(p1, dfa->data[i]);
     }
   }
-  vec_push(&partitions, accepting);
-  vec_push(&partitions, nonaccepting);
-
+  vec_push(&partitions, p0);
+  vec_push(&partitions, p1);
   for (int i = 0; i < partitions.length; ++i) {
+    dfa_node_t *first = partitions.data[i]->data[0];
     partition_t *new_partition = NULL;
-    vec_int_t removals;
-    vec_init(&removals);
-    partition_t *pi = partitions.data[i];
-    printf("partition %d = ", i);
-    for (int j = 0; j < pi->length; ++j) {
-      if (!pi->data[j]) {
+    for (int j = 0; j < partitions.data[i]->length; ++j) {
+      dfa_node_t *dij = partitions.data[i]->data[j];
+      if (dfa_nodes_equivalent(first, dij)) {
         continue;
       }
-      printf("%c ", pi->data[j]->id);
-    }
-    printf("\n");
-    dfa_node_t *first = pi->data[0];
-    for (int j = 1; j < pi->length; ++j) {
-      dfa_node_t *dij = pi->data[j];
-      if (!dij) {
-        continue;
+      if (new_partition == NULL) {
+        new_partition = malloc(sizeof(partition_t));
+        vec_init(new_partition);
       }
-      for (char c = 0; c < 0x7F; ++c) {
-        dfa_node_t *goto_first = do_goto(first, c);
-        dfa_node_t *goto_dij = do_goto(dij, c);
-        bool remove = false;
-        if ((goto_first == NULL) ^ (goto_dij == NULL)) {
-          remove = true;
-        }
-        if (goto_first != NULL && goto_dij != NULL &&
-            goto_first->partition != goto_dij->partition) {
-          remove = true;
-        }
-        if (remove) {
-          if (!new_partition) {
-            new_partition = malloc(sizeof(partition_t));
-            vec_init(new_partition);
-          }
-          vec_push(new_partition, dij);
-          dij->partition = partitions.length;
-          vec_push(&removals, j);
-          break;
-        }
-      }
+      vec_push(new_partition, dij);
+      dij->partition = partitions.length;
     }
-    if (new_partition) {
+    if (new_partition != NULL) {
       vec_push(&partitions, new_partition);
     }
-    for (int j = 0; j < removals.length; ++j) {
-      int removal = removals.data[j];
-      // no need to free, the node is in the new partition
-      pi->data[j] = NULL;
-    }
-
-    printf("partition %d = ", i);
-    for (int j = 0; j < pi->length; ++j) {
-      if (!pi->data[j]) {
-        continue;
-      }
-      printf("%c ", pi->data[j]->id);
-    }
-    printf("\n");
   }
-  dfa_t result;
-  vec_init(&result);
-  char id = 'A';
-  vec_t(vec_int_t *) pointers;
+
+  vec_t(vec_int_t) pointers;
   vec_init(&pointers);
   for (int i = 0; i < partitions.length; ++i) {
-    vec_int_t *next = malloc(sizeof(vec_int_t));
-    vec_init(next);
-    dfa_node_t *new_node = malloc(sizeof(dfa_node_t));
-    dfa_node_t *cur_node = NULL;
-    for (int j = 0; !cur_node; ++j) {
-      cur_node = partitions.data[i]->data[j];
+    vec_int_t nx;
+    vec_init(&nx);
+    for (int j = 0; j < partitions.data[i]->data[0]->next.length; ++j) {
+      vec_push(&nx, partitions.data[i]->data[0]->next.data[j]->partition);
     }
-    vec_init(&new_node->next);
-    new_node->bitset = bitset_copy(cur_node->bitset);
-    vec_init(&new_node->chars);
-    new_node->id = id;
-    ++id;
-    for (int j = 0; j < cur_node->next.length; ++j) {
-      bool in_next = false;
-      for (int k = 0; k < next->length; ++k) {
-        if (cur_node->next.data[j]->partition == next->data[k]) {
-          in_next = true;
-          break;
-        }
-      }
-      if (!in_next) {
-        vec_push(&new_node->chars, bitset_copy(cur_node->chars.data[j]));
-        vec_push(&new_node->next, NULL);
-        vec_push(next, cur_node->next.data[j]->partition);
-      }
-    }
-    vec_push(&pointers, next);
-    vec_push(&result, new_node);
+    vec_push(&pointers, nx);
   }
-  for (int i = 0; i < pointers.length; ++i) {
-    for (int j = 0; j < pointers.data[i]->length; ++j) {
-      result.data[i]->next.data[j] = result.data[pointers.data[i]->data[j]];
+
+  dfa_t new_dfa;
+  vec_init(&new_dfa);
+  for (int i = 0; i < partitions.length; ++i) {
+    dfa_node_t *node = malloc(sizeof(dfa_node_t));
+    dfa_node_t *old = partitions.data[i]->data[0];
+    node->index = i;
+    node->bitset = bitset_create();
+    node->id = i + 'A';
+    node->partition = i;
+    vec_init(&node->next);
+    vec_init(&node->chars);
+    for (int j = 0; j < old->chars.length; ++j) {
+      vec_push(&node->chars, bitset_copy(old->chars.data[j]));
+    }
+    vec_push(&new_dfa, node);
+  }
+  for (int i = 0; i < new_dfa.length; ++i) {
+    for (int j = 0; j < pointers.data[i].length; ++j) {
+      vec_push(&new_dfa.data[i]->next, new_dfa.data[pointers.data[i].data[j]]);
     }
   }
-  return result;
+  return new_dfa;
 }
 
 static void emit_comment(const char *comment, ...) {
@@ -839,14 +804,14 @@ int main(int argc, char *argv[]) {
   nfa_t nfa2 = thompson("^[ \\t]*#[0-9]+.*$");
   // nfa_print(&nfa2);
 
-  dfa_t dfa = nfa_to_dfa(&nfa2);
+  dfa_t dfa = nfa_to_dfa(&nfa);
   dfa_to_dot(&dfa);
   dfa_t min = minimize_dfa(&dfa);
   dfa_to_dot(&min);
 
-  emit_yy_next("UNMIN_TABLE");
-  printf("static const int UNMIN_TABLE[][] = ");
-  emit_dfa_state_table(&dfa);
+  emit_yy_next("MIN_TABLE");
+  printf("static const int MIN_TABLE[][] = ");
+  emit_dfa_state_table(&min);
 
   nfa_free(&nfa);
   nfa_free(&nfa2);

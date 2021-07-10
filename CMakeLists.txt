@@ -2,7 +2,10 @@ cmake_minimum_required(VERSION 3.21)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 20)
 
-project(c-algorithms)
+project(
+  c-algorithms
+  VERSION 1.2.0
+  LANGUAGES C)
 file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "c-algorithms/src/*.[ch]")
 add_library(c-algorithms ${SOURCES})
 target_include_directories(${PROJECT_NAME} PUBLIC c-algorithms/src)
