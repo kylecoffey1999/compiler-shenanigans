@@ -1161,7 +1161,7 @@ static void pnext(FILE *fp, const char *name)
     fprintf(fp, "%s %s yy_next(int cur_state, unsigned int c)\n", DECODING_ROUTINE_STORAGE_CLASS, TYPE);
     fprintf(fp, "{\n");
     comment(fp, toptext);
-    fprintf(fp, "    %s *p = %s[cur_state];\n", TYPE, name);
+    fprintf(fp, "  %s *p = %s[cur_state];\n", TYPE, name);
     printv(fp, boptext);
 }
 
@@ -1188,6 +1188,7 @@ int main(int argc, char *argv[])
     show_dtran(&dtran);
 
     pairs(stdout, &dtran, "test", 5, true);
+    pnext(stdout, "yy_next");
 
     dfa_free(&min);
     dfa_free(&dfa);
