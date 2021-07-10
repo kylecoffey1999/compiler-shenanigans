@@ -769,33 +769,8 @@ static void emit_dfa_state_table(const dfa_t *dfa) {
 
 static void pairs(const dfa_t *dfa, const char *name, int threshold,
                   bool numbers) {
-  int num_cells = 0;
-  for (int i = 0; i < dfa->length; ++i) {
-    int ntransitions = 0;
-    for (int j = 0; j < dfa->data[i]->next.length; ++j) {
-      ntransitions += bitset_count(dfa->data[i]->chars.data[j]);
-    }
-    if (ntransitions > 0) {
-      printf("%s %s %s%-d[] = { ", STORAGE_CLASS, TYPE, name, i);
-      ++num_cells;
-      if (ntransitions > threshold) {
-        printf("0,\n          ");
-      } else {
-        printf("%5d, ", ntransitions);
-        if (threshold > 5) {
-          printf("\n          ");
-        }
-      }
-      int nprinted = NCOLS;
-      int ncommas = ntransitions;
-      for (int j = 0; j < 0x7F; ++j) {
-        if (ntransitions > threshold) {
-          ++num_cells;
-          --nprinted;
-        }
-      }
-    }
-  }
+  printf("TODO\n");
+  // https://stackoverflow.com/a/29960371
 }
 
 int main(int argc, char *argv[]) {
