@@ -1156,8 +1156,7 @@ static void pnext(FILE *fp, const char *name)
         "  }",      "  return YYF;",
         "}",        NULL,
     };
-    fprintf(fp, "\n/*----------------------------------------------------------------*/"
-                "\n");
+    fprintf(fp, "\n/*------------------------------------------------*/\n");
     fprintf(fp, "%s %s yy_next(int cur_state, unsigned int c)\n", DECODING_ROUTINE_STORAGE_CLASS, TYPE);
     fprintf(fp, "{\n");
     comment(fp, toptext);
