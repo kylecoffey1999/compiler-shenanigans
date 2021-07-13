@@ -1,4 +1,5 @@
 #include <bitset.h>
+#include <gc.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -70,7 +71,7 @@ static nfa_node_t *alloc_nfa(nfa_parser_state_t *state)
 {
     if (state->discard_stack.length == 0)
     {
-        nfa_node_t *node = malloc(sizeof(nfa_node_t));
+        nfa_node_t *node = GC_malloc(sizeof(nfa_node_t));
         memset(node, 0, sizeof(nfa_node_t));
         node->bitset = bitset_create();
         node->index = state->nfa.length;
@@ -79,9 +80,11 @@ static nfa_node_t *alloc_nfa(nfa_parser_state_t *state)
     }
 
     int discarded = vec_pop(&state->discard_stack);
-    state->nfa.data[discarded] = malloc(sizeof(nfa_node_t));
+    state->nfa.data[discarded] = GC_malloc(sizeof(nfa_node_t));
     nfa_node_t *node = state->nfa.data[discarded];
-    memset(node, 0, sizeof(nfa_node_t));
+    node->complement = false;
+    node->edge = EDGE_EMPTY;
+    node->anchor = ANCHOR_NONE;
     node->bitset = bitset_create();
     node->index = discarded;
     return node;
@@ -91,8 +94,7 @@ static void discard_nfa(nfa_parser_state_t *state, nfa_node_t *node)
 {
     int index = node->index;
     vec_push(&state->discard_stack, node->index);
-    bitset_free(node->bitset);
-    free(node);
+    bitset_clear(node->bitset);
     state->nfa.data[index] = NULL;
 }
 
@@ -497,9 +499,10 @@ static nfa_t *thompson(const char *input)
     vec_init(&state.nfa);
     state.in_quote = false;
     vec_init(&state.discard_stack);
-    nfa_t *out = malloc(sizeof(nfa_t));
+    nfa_t *out = GC_malloc(sizeof(nfa_t));
     out->start = machine(&state)->index;
     out->nfa = state.nfa;
+    vec_deinit(&state.discard_stack);
     for (int i = 0; i < out->nfa.length; ++i)
     {
         if (out->nfa.data[i])
@@ -517,7 +520,6 @@ void nfa_free(nfa_t *nfa)
         if (nfa->nfa.data[i])
         {
             bitset_free(nfa->nfa.data[i]->bitset);
-            free(nfa->nfa.data[i]);
         }
     }
     vec_deinit(&nfa->nfa);
@@ -569,7 +571,7 @@ static dfa_node_t *epsilon_closure(nfa_t *nfa, bitset_t *input)
         }
     }
     vec_deinit(&stack);
-    dfa_node_t *dfa_node = malloc(sizeof(dfa_node_t));
+    dfa_node_t *dfa_node = GC_malloc(sizeof(dfa_node_t));
     dfa_node->bitset = input;
     vec_init(&dfa_node->next);
     vec_init(&dfa_node->chars);
@@ -594,7 +596,7 @@ static dfa_node_t *move(nfa_t *nfa, bitset_t *input, char c)
             }
         }
     }
-    dfa_node_t *dfa_node = malloc(sizeof(dfa_node_t));
+    dfa_node_t *dfa_node = GC_malloc(sizeof(dfa_node_t));
     dfa_node->bitset = outset;
     vec_init(&dfa_node->next);
     vec_init(&dfa_node->chars);
@@ -608,7 +610,7 @@ static dfa_t *nfa_to_dfa(nfa_t *nfa)
     bitset_t *init = bitset_create();
     bitset_set(init, nfa->start);
     dfa_node_t *d0 = epsilon_closure(nfa, init);
-    dfa_t *dfa = malloc(sizeof(dfa_t));
+    dfa_t *dfa = GC_malloc(sizeof(dfa_t));
     dfa_t work;
     vec_init(dfa);
     vec_init(&work);
@@ -625,7 +627,6 @@ static dfa_t *nfa_to_dfa(nfa_t *nfa)
             if (dj->bitset)
             {
                 dfa_node_t *s = epsilon_closure(nfa, dj->bitset);
-                free(dj);
                 dj = s;
                 bool unique = true;
                 bool in_next = false;
@@ -669,7 +670,6 @@ static dfa_t *nfa_to_dfa(nfa_t *nfa)
                     {
                         bitset_free(dj->bitset);
                     }
-                    free(dj);
                 }
             }
             else
@@ -679,7 +679,6 @@ static dfa_t *nfa_to_dfa(nfa_t *nfa)
                 {
                     bitset_free(dj->bitset);
                 }
-                free(dj);
             }
         }
         ++id;
@@ -771,9 +770,9 @@ static dfa_t *minimize_dfa(dfa_t *dfa)
     //   to a new partition
     vec_partition_t partitions;
     vec_init(&partitions);
-    partition_t *p0 = malloc(sizeof(partition_t));
+    partition_t *p0 = GC_malloc(sizeof(partition_t));
     vec_init(p0);
-    partition_t *p1 = malloc(sizeof(partition_t));
+    partition_t *p1 = GC_malloc(sizeof(partition_t));
     vec_init(p1);
     for (int i = 0; i < dfa->length; i++)
     {
@@ -803,7 +802,7 @@ static dfa_t *minimize_dfa(dfa_t *dfa)
             }
             if (new_partition == NULL)
             {
-                new_partition = malloc(sizeof(partition_t));
+                new_partition = GC_malloc(sizeof(partition_t));
                 vec_init(new_partition);
             }
             vec_push(new_partition, dij);
@@ -828,11 +827,11 @@ static dfa_t *minimize_dfa(dfa_t *dfa)
         vec_push(&pointers, nx);
     }
 
-    dfa_t *new_dfa = malloc(sizeof(dfa_t));
+    dfa_t *new_dfa = GC_malloc(sizeof(dfa_t));
     vec_init(new_dfa);
     for (int i = 0; i < partitions.length; ++i)
     {
-        dfa_node_t *node = malloc(sizeof(dfa_node_t));
+        dfa_node_t *node = GC_malloc(sizeof(dfa_node_t));
         dfa_node_t *old = partitions.data[i]->data[0];
         node->index = i;
         node->bitset = bitset_create();
@@ -932,7 +931,6 @@ static void dfa_free(dfa_t *dfa)
         bitset_free(dfa->data[i]->bitset);
         vec_deinit(&dfa->data[i]->chars);
         vec_deinit(&dfa->data[i]->next);
-        free(dfa->data[i]);
     }
     vec_deinit(dfa);
 }
@@ -1200,6 +1198,12 @@ int main(int argc, char *argv[])
 
     pairs(stdout, &dtran, "test", 5, true);
     pnext(stdout, "yy_next");
+
+    for (int i = 0; i < dtran.length; ++i)
+    {
+        vec_deinit(&dtran.data[i]);
+    }
+    vec_deinit(&dtran);
 
     dfa_free(min);
     dfa_free(dfa);
