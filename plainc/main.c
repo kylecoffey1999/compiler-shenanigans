@@ -34,7 +34,7 @@ typedef struct
     size_t start;
 } nfa_t;
 
-static nfa_t thompson(const char *input);
+static nfa_t *thompson(const char *input);
 static void nfa_print(nfa_t *nfa);
 
 typedef enum
@@ -489,7 +489,7 @@ static void nfa_print(nfa_t *nfa)
     }
 }
 
-static nfa_t thompson(const char *input)
+static nfa_t *thompson(const char *input)
 {
     nfa_parser_state_t state;
     state.input = input;
@@ -497,14 +497,14 @@ static nfa_t thompson(const char *input)
     vec_init(&state.nfa);
     state.in_quote = false;
     vec_init(&state.discard_stack);
-    nfa_t out;
-    out.start = machine(&state)->index;
-    out.nfa = state.nfa;
-    for (int i = 0; i < out.nfa.length; ++i)
+    nfa_t *out = malloc(sizeof(nfa_t));
+    out->start = machine(&state)->index;
+    out->nfa = state.nfa;
+    for (int i = 0; i < out->nfa.length; ++i)
     {
-        if (out.nfa.data[i])
+        if (out->nfa.data[i])
         {
-            out.nfa.data[i]->index = i;
+            out->nfa.data[i]->index = i;
         }
     }
     return out;
@@ -603,16 +603,16 @@ static dfa_node_t *move(nfa_t *nfa, bitset_t *input, char c)
 
 typedef vec_t(dfa_node_t *) dfa_t;
 
-static dfa_t nfa_to_dfa(nfa_t *nfa)
+static dfa_t *nfa_to_dfa(nfa_t *nfa)
 {
     bitset_t *init = bitset_create();
     bitset_set(init, nfa->start);
     dfa_node_t *d0 = epsilon_closure(nfa, init);
-    dfa_t dfa;
+    dfa_t *dfa = malloc(sizeof(dfa_t));
     dfa_t work;
-    vec_init(&dfa);
+    vec_init(dfa);
     vec_init(&work);
-    vec_push(&dfa, d0);
+    vec_push(dfa, d0);
     vec_push(&work, d0);
     char id = 'A';
     while (work.length > 0)
@@ -629,14 +629,14 @@ static dfa_t nfa_to_dfa(nfa_t *nfa)
                 dj = s;
                 bool unique = true;
                 bool in_next = false;
-                for (int i = 0; i < dfa.length; ++i)
+                for (int i = 0; i < dfa->length; ++i)
                 {
-                    if (bitset_equals(dfa.data[i]->bitset, dj->bitset))
+                    if (bitset_equals(dfa->data[i]->bitset, dj->bitset))
                     {
                         unique = false;
                         for (int j = 0; j < di->next.length; ++j)
                         {
-                            if (di->next.data[j] == dfa.data[i])
+                            if (di->next.data[j] == dfa->data[i])
                             {
                                 in_next = true;
                                 bitset_set(di->chars.data[j], c);
@@ -645,7 +645,7 @@ static dfa_t nfa_to_dfa(nfa_t *nfa)
                         }
                         if (!in_next)
                         {
-                            vec_push(&di->next, dfa.data[i]);
+                            vec_push(&di->next, dfa->data[i]);
                         }
                         dj->id = i + 'A';
                         break;
@@ -660,7 +660,7 @@ static dfa_t nfa_to_dfa(nfa_t *nfa)
                 if (unique)
                 {
                     vec_push(&di->next, dj);
-                    vec_push(&dfa, dj);
+                    vec_push(dfa, dj);
                     vec_push(&work, dj);
                 }
                 else
@@ -684,9 +684,9 @@ static dfa_t nfa_to_dfa(nfa_t *nfa)
         }
         ++id;
     }
-    for (int i = 0; i < dfa.length; ++i)
+    for (int i = 0; i < dfa->length; ++i)
     {
-        dfa.data[i]->index = i;
+        dfa->data[i]->index = i;
     }
     return dfa;
 }
@@ -762,7 +762,7 @@ static bool dfa_nodes_equivalent(dfa_node_t *n1, dfa_node_t *n2)
     return true;
 }
 
-static dfa_t minimize_dfa(dfa_t *dfa)
+static dfa_t *minimize_dfa(dfa_t *dfa)
 {
     // accepting, nonaccepting
     // for each partition:
@@ -828,8 +828,8 @@ static dfa_t minimize_dfa(dfa_t *dfa)
         vec_push(&pointers, nx);
     }
 
-    dfa_t new_dfa;
-    vec_init(&new_dfa);
+    dfa_t *new_dfa = malloc(sizeof(dfa_t));
+    vec_init(new_dfa);
     for (int i = 0; i < partitions.length; ++i)
     {
         dfa_node_t *node = malloc(sizeof(dfa_node_t));
@@ -844,18 +844,18 @@ static dfa_t minimize_dfa(dfa_t *dfa)
         {
             vec_push(&node->chars, bitset_copy(old->chars.data[j]));
         }
-        vec_push(&new_dfa, node);
+        vec_push(new_dfa, node);
     }
     for (int i = 0; i < partitions.length; ++i)
     {
         vec_deinit(partitions.data[i]);
     }
     vec_deinit(&partitions);
-    for (int i = 0; i < new_dfa.length; ++i)
+    for (int i = 0; i < new_dfa->length; ++i)
     {
         for (int j = 0; j < pointers.data[i].length; ++j)
         {
-            vec_push(&new_dfa.data[i]->next, new_dfa.data[pointers.data[i].data[j]]);
+            vec_push(&new_dfa->data[i]->next, new_dfa->data[pointers.data[i].data[j]]);
         }
     }
     vec_deinit(&pointers);
@@ -1164,34 +1164,46 @@ static void pnext(FILE *fp, const char *name)
     printv(fp, boptext);
 }
 
+typedef struct
+{
+    int col_map[0x80];
+    vec_int_t row_map;
+} squasher_state_t;
+
+static bool column_equiv(int *col1, int *col2, int len);
+static void col_cpy(int *to, int *from, int len, int a, int b);
+static void reduce(const dtran_t *dtran, int *a, int *b);
+static void print_col_map(FILE *fp);
+static void print_row_map(FILE *fp, int a);
+
 int main(int argc, char *argv[])
 {
-    nfa_t nfa = thompson("^[ \\t]*//[ \\t]*TRACE[ \\t]*#[0-9]+[ \\t]*$");
+    nfa_t *nfa = thompson("^[ \\t]*//[ \\t]*TRACE[ \\t]*#[0-9]+[ \\t]*$");
     // nfa_print(&nfa);
-    nfa_t nfa2 = thompson("^[ \\t]*#[0-9]+.*$");
+    nfa_t *nfa2 = thompson("^[ \\t]*#[0-9]+.*$");
     // nfa_print(&nfa2);
 
-    dfa_t dfa = nfa_to_dfa(&nfa);
-    // dfa_to_dot(&dfa);
-    dfa_t min = minimize_dfa(&dfa);
-    // dfa_to_dot(&min);
+    dfa_t *dfa = nfa_to_dfa(nfa2);
+    dfa_to_dot(dfa);
+    dfa_t *min = minimize_dfa(dfa);
+    dfa_to_dot(min);
 
     emit_yy_next("UNMIN_TABLE");
     printf("static const int UNMIN_TABLE[][] = ");
-    emit_dfa_state_table(&dfa);
+    emit_dfa_state_table(dfa);
     emit_yy_next("MIN_TABLE");
     printf("static const int MIN_TABLE[][] = ");
-    emit_dfa_state_table(&min);
+    emit_dfa_state_table(min);
 
-    dtran_t dtran = make_dtran(&min);
+    dtran_t dtran = make_dtran(min);
     show_dtran(&dtran);
 
     pairs(stdout, &dtran, "test", 5, true);
     pnext(stdout, "yy_next");
 
-    dfa_free(&min);
-    dfa_free(&dfa);
-    // nfa_free(&nfa);
-    // nfa_free(&nfa2);
+    dfa_free(min);
+    dfa_free(dfa);
+    nfa_free(nfa);
+    nfa_free(nfa2);
     return 0;
 }
