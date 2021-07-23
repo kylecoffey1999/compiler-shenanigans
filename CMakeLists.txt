@@ -44,7 +44,7 @@ project(
 file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "plainc/*.[ch]")
 add_executable(${PROJECT_NAME} ${SOURCES})
 
-target_link_libraries(${PROJECT_NAME} cbitset vec)
+target_link_libraries(${PROJECT_NAME} cbitset vec gc)
 
 project(
   regex-cpp
