@@ -56,3 +56,11 @@ add_executable(${PROJECT_NAME} ${SOURCES})
 find_package(fmt CONFIG REQUIRED)
 find_package(Boost REQUIRED)
 target_link_libraries(${PROJECT_NAME} fmt::fmt)
+
+project(
+  dparsed
+  VERSION 0.1.0
+  LANGUAGES C)
+file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "dparser/*.[ch]")
+add_executable(${PROJECT_NAME} ${SOURCES})
+target_link_libraries(${PROJECT_NAME} dparse vec)
