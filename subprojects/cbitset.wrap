@@ -1,0 +1,11 @@
+[wrap-git]
+url = https://github.com/lemire/cbitset.git
+revision = head
+
+patch_url = https://phytolizer.dev/cbitset.zip
+patch_filename = cbitset.zip
+patch_hash = 03e5017ba11e021e6d03c908fccb6af9f732bfd97ffbfcf3e88a5397b51b27b4
+
+[provide]
+cbitset = cbitset_dep
+

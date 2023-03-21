@@ -1,0 +1,9 @@
+[wrap-git]
+url = https://github.com/rxi/vec.git
+revision = head
+patch_url = https://phytolizer.dev/vec.zip
+patch_filename = vec.zip
+patch_hash = 6ce0de36c2e6acf36cb365f1309544859d4461cbba30cd709fec6b0a41b6e3d8
+
+[provide]
+vec = vec_dep

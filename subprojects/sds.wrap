@@ -1,0 +1,9 @@
+[wrap-git]
+url = https://github.com/antirez/sds.git
+revision = head
+patch_url = https://phytolizer.dev/sds.zip
+patch_filename = sds.zip
+patch_hash = 586dfac16b6e2daadfda0045ee3d6910167b5d0623aa3ff8d5a3646273e0b671
+
+[provide]
+sds = sds_dep

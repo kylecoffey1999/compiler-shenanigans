@@ -1,0 +1,11 @@
+[wrap-git]
+url = https://github.com/fragglet/c-algorithms.git
+revision = head
+
+patch_url = https://phytolizer.dev/c-algorithms.zip
+patch_filename = c-algorithms.zip
+patch_hash = bf5654a85c304fef7f7176de97c7f8c26ea931295cf254075513695873452c73
+
+[provide]
+c-algorithms = c_algorithms_dep
+

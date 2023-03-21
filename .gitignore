@@ -1,2 +1,7 @@
 /build
 /.cache
+/subprojects/c-algorithms
+/subprojects/cbitset
+/subprojects/packagecache
+/subprojects/sds
+/subprojects/vec
